@@ -2,9 +2,14 @@
 
 import shelve
 import sys
-import ConfigParser
+import ConfigParser, psycopg2 as sql
 from datetime import datetime
 from xmlrpclib import ServerProxy, Error
+
+def shouldExit():
+    global code
+    code = raw_input('Barcode: ')
+    return code.lower() in quit_list
 
 # get RPC key
 try:
@@ -45,9 +50,8 @@ quit_list = ('exit','quit','bye')
 s = ServerProxy('http://www.upcdatabase.com/xmlrpc')
 
 d = shelve.open('UPC_cache', writeback=True)
-code = raw_input('Barcode: ')
 
-exit_loop = (code.lower() in quit_list)
+exit_loop = shouldExit()
 
 while not exit_loop:
 
@@ -55,7 +59,17 @@ while not exit_loop:
     data = {}
     lookup = True
 
-    if d.has_key(code):
+    if code == 'Check In':
+        print 'Checking in the items to follow!'
+        lookup = False
+        exit_loop = shouldExit()
+        continue
+    elif code == 'Check Out':
+        print 'Checking out the items to follow!'
+        lookup = False
+        exit_loop = shouldExit()
+        continue
+    elif d.has_key(code):
         data = d[code]
         if datetime.strptime(data['noCacheAfterUTC'].value, "%Y-%m-%dT%H:%M:%S") < timestamp:
             lookup = True
@@ -94,16 +108,14 @@ while not exit_loop:
             print '\tAre you sure you put your correct RPC key in the config file?'
             d.close()
             sys.exit(-3)
-        code = raw_input('Barcode: ')
-        exit_loop = (code.lower() in quit_list)
+        exit_loop = shouldExit()
         continue
 
-    cur.execute('insert into %s (code, description, size, lastAdded'
+    cur.execute('insert into %s (code, description, size, lastAdded) values (%s %s %s %s)'%inventory_table,(data['upc'],data['description'],data['size'],timestamp,))
     print ('Cached','Lookup')[lookup],data['upc'], data['description'], data['size']
     
     # end loop
-    code = raw_input('Barcode: ')
-    exit_loop = (code.lower() in quit_list) 
+    exit_loop = shouldExit()
 
 #quit message
 print 'Quitting!'

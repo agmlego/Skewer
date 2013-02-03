@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import shelve
 import sys
@@ -8,7 +9,10 @@ from xmlrpclib import ServerProxy, Error
 
 def shouldExit():
     global code
-    code = raw_input('Barcode: ')
+    try:
+        code = raw_input('Barcode: ')
+    except EOFError:
+        return True
     return code.lower() in quit_list
 
 # get RPC key
@@ -52,6 +56,7 @@ s = ServerProxy('http://www.upcdatabase.com/xmlrpc')
 d = shelve.open('UPC_cache', writeback=True)
 
 exit_loop = shouldExit()
+action = 'out'
 
 while not exit_loop:
 
@@ -61,25 +66,31 @@ while not exit_loop:
 
     if code == 'Check In':
         print 'Checking in the items to follow!'
-        lookup = False
+        action = 'in'
         exit_loop = shouldExit()
         continue
     elif code == 'Check Out':
         print 'Checking out the items to follow!'
-        lookup = False
+        action = 'out'
+        exit_loop = shouldExit()
+        continue
+    elif code == 'List':
+        print 'Listing Items...!'
+        cur.execute('select (idx,code,quantity,description,size,type,lastUsed,lastAdded) from ' + inventory_table)
+        print'idx\tcode\tquantity\tdescription\tsize\ttype\tlastUsed\tlastAdded\t'
+        print '-'*79
+        for row in cur:
+            print '\t'.join(row[0][1:-1].split(','))
         exit_loop = shouldExit()
         continue
     elif d.has_key(code):
         data = d[code]
         if datetime.strptime(data['noCacheAfterUTC'].value, "%Y-%m-%dT%H:%M:%S") < timestamp:
             lookup = True
-            print 'Too old!'
         else:
             lookup = False
-            print 'In cache!'
     
     if lookup:
-        print 'Looking it up...'
         data = s.lookup({'rpc_key' : rpc_key, 'upc' : code})
 
     if data['status'] == 'success':
@@ -111,12 +122,58 @@ while not exit_loop:
         exit_loop = shouldExit()
         continue
 
-    cur.execute('insert into %s (code, description, size, lastAdded) values (%s %s %s %s)'%inventory_table,(data['upc'],data['description'],data['size'],timestamp,))
-    print ('Cached','Lookup')[lookup],data['upc'], data['description'], data['size']
-    
+    # database work
+
+    # figure out if the item is in the database yet
+    cur.execute('select quantity from ' + inventory_table + ' where code=%s',(data['upc'],))
+   
+    if cur.rowcount == 0:
+        # item was not in database, so put it there
+        cur.execute('''insert into ''' + inventory_table + '''
+                    (code, description, size, lastAdded, quantity)
+                    values (%s, %s, %s, %s, %s)
+                    ''',
+                    (data['upc'],data['description'],data['size'],timestamp,1))
+        print '[%s] Now %d after ADDING %s (%s %s)'%(
+            ('Cached','Lookup')[lookup],
+            1,data['upc'],
+            data['description'], data['size'])
+        
+    else:
+        # item was there, so update the record
+        quantity = cur.fetchone()[0]
+        if action == 'in':
+            cur.execute('''update ''' + inventory_table + '''
+                        set quantity=%s, lastAdded=%s
+                        where code=%s
+                        ''',
+                        (quantity + 1,timestamp,data['upc']))
+            print '[%s] Now %d after checking IN %s (%s %s)'%(
+                ('Cached','Lookup')[lookup],
+                quantity + 1,data['upc'],
+                data['description'], data['size'])
+  
+        elif action == 'out':
+            if quantity == 0:
+                print 'There are already no %s (%s %s) in inventory...'%(data['upc'], data['description'], data['size'])
+            else:
+                cur.execute('''update ''' + inventory_table + '''
+                        set quantity=%s, lastUsed=%s
+                        where code=%s
+                        ''',
+                        (quantity - 1,timestamp,data['upc']))
+                print '[%s] Now %d after checking OUT %s (%s %s)'%(
+                    ('Cached','Lookup')[lookup],
+                    quantity - 1,data['upc'],
+                    data['description'], data['size'])
+
     # end loop
     exit_loop = shouldExit()
+    db.commit()
 
 #quit message
 print 'Quitting!'
+db.commit()
+cur.close()
+db.close()
 d.close()

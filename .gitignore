@@ -36,3 +36,6 @@ nosetests.xml
 
 # remote config file with RPC key
 rpc.ini
+
+# server config file with database password
+skewer.ini

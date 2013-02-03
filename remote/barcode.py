@@ -64,17 +64,17 @@ while not exit_loop:
     data = {}
     lookup = True
 
-    if code == 'Check In':
+    if code.upper() == 'CHECK IN':
         print 'Checking in the items to follow!'
         action = 'in'
         exit_loop = shouldExit()
         continue
-    elif code == 'Check Out':
+    elif code.upper() == 'CHECK OUT':
         print 'Checking out the items to follow!'
         action = 'out'
         exit_loop = shouldExit()
         continue
-    elif code == 'List':
+    elif code.upper() == 'LIST ITEMS':
         print 'Listing Items...!'
         cur.execute('select (idx,code,quantity,description,size,type,lastUsed,lastAdded) from ' + inventory_table)
         print'idx\tcode\tquantity\tdescription\tsize\ttype\tlastUsed\tlastAdded\t'

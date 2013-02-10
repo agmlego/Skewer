@@ -61,6 +61,7 @@ action = 'out'
 while not exit_loop:
 
     timestamp = datetime.utcnow()
+    timestamp.replace(microsecond = 0)
     data = {}
     lookup = True
 
@@ -85,10 +86,13 @@ while not exit_loop:
         continue
     elif d.has_key(code):
         data = d[code]
-        if datetime.strptime(data['noCacheAfterUTC'].value, "%Y-%m-%dT%H:%M:%S") < timestamp:
+        if datetime.strptime(data['noCacheAfterUTC'], "%Y-%m-%dT%H:%M:%S") < timestamp:
             lookup = True
         else:
-            lookup = False
+            # TODO figure out why the cache is being stupid with datetime
+            # objects and such...
+            #lookup = False
+            lookup=True
     
     if lookup:
         data = s.lookup({'rpc_key' : rpc_key, 'upc' : code})
@@ -96,23 +100,34 @@ while not exit_loop:
     if data['status'] == 'success':
         if data['found']:
             d[code] = data
+
+            if type(d[code]['noCacheAfterUTC']) is not str:
+                d[code]['noCacheAfterUTC'] = d[code]['noCacheAfterUTC'].value
         else:
             print 'Item not found!'
-            c = raw_input('Do you want to submit a correction? (Y/n) ')
-            if c.lower() != 'n':
+            c = raw_input('Do you want to submit a correction? (y/N) ')
+            if c.lower() == 'y':
                 description = raw_input('Description: ')
                 size = raw_input('Size: ')
                 result = s.writeEntry({'rpc_key' : rpc_key, 'upc' : code,
                               'description' : description})
                 if result['status'] == 'success':
                     print 'Success!'
-                    data['noCacheAfterUTC'] = timestamp
+                    data['noCacheAfterUTC'] = timestamp.isoformat()
                     data['description'] = description
                     data['size'] = size
                     data['upc'] = code
                     d[code] = data
                 else:
                     print result['message']
+            else:
+                print 'Entering unknown item, please update record offline...'
+                data['noCacheAfterUTC'] = timestamp.isoformat()
+                data['description'] = 'UNKNOWN ITEM'
+                data['size'] = ''
+                data['upc'] = code
+                d[code] = data
+
     else:
         print data['message']
         if 'credentials' in data['message'].lower():
